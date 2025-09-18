@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>UFT 引力透镜：光子严格随空间线运动</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  html, body { margin:0; padding:0; background:#000; color:#e8f6f6; overflow:hidden;
+               font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+  canvas { display:block; }
+  #ui { position:absolute; left:12px; top:12px; z-index:10; background:rgba(0,0,0,0.55);
+        border:1px solid rgba(255,255,255,0.12); border-radius:12px; padding:12px; backdrop-filter:blur(4px);
+        max-width:560px; box-shadow:0 6px 22px rgba(0,0,0,0.35); }
+  #ui h1 { font-size:14px; margin:0 0 8px; color:#dff; }
+  .row { display:flex; align-items:center; gap:10px; margin:6px 0; }
+  .row label { flex:0 0 210px; font-size:12px; color:#a9c3c3; }
+  .row input[type=range]{ flex:1 1 auto; }
+  .val { width:86px; text-align:right; font-variant-numeric:tabular-nums; color:#fff; }
+  .sep { height:1px; background:rgba(255,255,255,0.12); margin:8px 0; }
+  .legend{ position:absolute; right:12px; top:12px; background:rgba(0,0,0,0.55);
+           border:1px solid rgba(255,255,255,0.12); border-radius:10px; padding:8px 10px; font-size:12px; }
+  .legend .dot{ display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; vertical-align:middle; }
+  button { background:#0a1f1f; color:#dff; border:1px solid rgba(255,255,255,0.16); border-radius:9px; padding:6px 10px; cursor:pointer; }
+  button:hover{ filter:brightness(1.15); }
+</style>
+</head>
+<body>
+  <div id="ui">
+    <h1>统一场论：光子严格随空间线运动</h1>
+
+    <!-- 空间线（决定光子轨迹的“空间运动”） -->
+    <div class="row"><label>螺旋线数量</label>
+      <input id="lines" type="range" min="8" max="200" step="2" value="64" />
+      <div id="linesV" class="val">64</div>
+    </div>
+    <div class="row"><label>缩放</label>
+      <input id="zoom" type="range" min="0.5" max="4.0" step="0.1" value="1.2" />
+      <div id="zoomV" class="val">1.2×</div>
+    </div>
+    <div class="row"><label>基准半径 r₀(px)</label>
+      <input id="r0" type="range" min="4" max="120" step="1" value="4" />
+      <div id="r0V" class="val">24</div>
+    </div>
+    <div class="row"><label>总速度 c(px/s)</label>
+      <input id="cspd" type="range" min="60" max="600" step="10" value="240" />
+      <div id="cspdV" class="val">240</div>
+    </div>
+    <div class="row"><label>轴向占比 ζ</label>
+      <input id="zeta" type="range" min="0.1" max="0.95" step="0.01" value="0.70" />
+      <div id="zetaV" class="val">0.70</div>
+    </div>
+
+    <div class="sep"></div>
+
+    <!-- 物体（质量）对空间线的影响：初始不放置，可添加/清空 -->
+    <div class="row"><label>物体影响强度 κ</label>
+      <input id="kappa" type="range" min="0" max="100" step="5" value="50" />
+      <div id="kappaV" class="val">1.00</div>
+    </div>
+    <div class="row"><label>衰减指数 γ</label>
+      <input id="gamma" type="range" min="0.5" max="4.0" step="0.1" value="2.0" />
+      <div id="gammaV" class="val">2.0</div>
+    </div>
+    <div class="row"><label>软核半径 r<sub>core</sub>(px)</label>
+      <input id="rcore" type="range" min="1" max="200" step="1" value="40" />
+      <div id="rcoreV" class="val">40</div>
+    </div>
+    <div class="row" style="gap:8px; flex-wrap:wrap">
+      <button id="addBody">添加物体</button>
+      <button id="clearBodies">清空物体</button>
+    </div>
+
+    <div class="sep"></div>
+
+    <!-- 光子发射（仅频率，其他严格随空间线） -->
+    <div class="row"><label>发射频率 ν (个/秒)</label>
+      <input id="emitRate" type="range" min="0" max="50" step="1" value="5" />
+      <div id="emitRateV" class="val">5/s</div>
+    </div>
+    <div class="row" style="gap:8px; flex-wrap:wrap">
+      <button id="emitOne">单发一枚</button>
+      <button id="clearPhotons">清空光子</button>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div><span class="dot" style="background:#ff4d4d"></span>物体</div>
+    <div><span class="dot" style="background:#00e6cc"></span>空间螺旋线</div>
+    <div><span class="dot" style="background:#ffd166"></span>光子</div>
+  </div>
+
+  <canvas id="cv"></canvas>
+
+<script>
+// ===== 画布与上下文 =====
+const cv=document.getElementById('cv'); const ctx=cv.getContext('2d');
+function resize(){ cv.width=innerWidth; cv.height=innerHeight; }
+addEventListener('resize', resize); resize();
+
+// ===== UI =====
+const UI=id=>document.getElementById(id);
+const linesEl=UI('lines'), zoomEl=UI('zoom'), r0El=UI('r0'), cEl=UI('cspd'), zetaEl=UI('zeta');
+const linesV=UI('linesV'), zoomV=UI('zoomV'), r0V=UI('r0V'), cV=UI('cspdV'), zetaV=UI('zetaV');
+const kappaEl=UI('kappa'), gammaEl=UI('gamma'), rcoreEl=UI('rcore');
+const kappaV=UI('kappaV'), gammaV=UI('gammaV'), rcoreV=UI('rcoreV');
+const emitRateEl=UI('emitRate'), emitRateV=UI('emitRateV');
+const addBodyBtn=UI('addBody'), clearBodiesBtn=UI('clearBodies');
+const emitOneBtn=UI('emitOne'), clearPhotonsBtn=UI('clearPhotons');
+
+function upd(){
+  linesV.textContent=linesEl.value;
+  zoomV.textContent=(+zoomEl.value).toFixed(1)+'×';
+  r0V.textContent=r0El.value; cV.textContent=cEl.value; zetaV.textContent=(+zetaEl.value).toFixed(2);
+  kappaV.textContent=(+kappaEl.value).toFixed(2); gammaV.textContent=(+gammaEl.value).toFixed(1); rcoreV.textContent=rcoreEl.value;
+  emitRateV.textContent=(+emitRateEl.value).toFixed(0) + '/s';
+}
+['input','change'].forEach(ev=>[linesEl,zoomEl,r0El,cEl,zetaEl,kappaEl,gammaEl,rcoreEl,emitRateEl].forEach(e=>e.addEventListener(ev,upd)));
+upd();
+
+// ===== 世界坐标映射 =====
+function zoomVal(){ return +zoomEl.value; }
+function worldToScreen(x,y){ return {x: cv.width/2 + x*zoomVal(), y: cv.height/2 - y*zoomVal()}; }
+
+// ===== 物体（初始为空，可添加） =====
+const bodies=[];
+addBodyBtn.addEventListener('click',()=>{
+  bodies.push({x:(Math.random()-0.5)*300, y:(Math.random()-0.5)*220, r:14});
+});
+clearBodiesBtn.addEventListener('click',()=>{ bodies.length=0; });
+
+// 拖拽移动物体
+let dragging=-1;
+cv.addEventListener('mousedown', e=>{
+  const p=screenToWorld(e.clientX, e.clientY);
+  for(let i=bodies.length-1;i>=0;i--){ const b=bodies[i]; const dx=p.x-b.x, dy=p.y-b.y; if(dx*dx+dy*dy <= (b.r/zoomVal())**2){ dragging=i; return; } }
+});
+cv.addEventListener('mousemove', e=>{
+  if(dragging>=0){ const p=screenToWorld(e.clientX, e.clientY); bodies[dragging].x=p.x; bodies[dragging].y=p.y; }
+});
+cv.addEventListener('mouseup', ()=>{ dragging=-1; });
+
+function screenToWorld(sx,sy){ return {x:(sx-cv.width/2)/zoomVal(), y:-(sy-cv.height/2)/zoomVal()}; }
+
+// ===== 场/辅助 =====
+const EPS=1e-8;
+function norm(x,y){ const n=Math.hypot(x,y); return n<EPS?{x:0,y:0}:{x:x/n,y:y/n}; }
+function bendedDir(rx,ry,nx,ny){
+  // 方向 = 原方向 + κ * Σ w_j * 指向体方向
+  let ax=nx, ay=ny; const k=+kappaEl.value, g=+gammaEl.value, rc=+rcoreEl.value;
+  for(const b of bodies){
+    const dx=b.x-rx, dy=b.y-ry; const d=Math.hypot(dx,dy)+rc; const w = 1/Math.pow(d, g);
+    const dir = (d>EPS)?{x:dx/(d), y:dy/(d)}:{x:0,y:0}; ax += k*w*dir.x; ay += k*w*dir.y;
+  }
+  const nrm=norm(ax,ay); return {nx:nrm.x, ny:nrm.y};
+}
+
+// 基于“空间线定义”：给定线索引 i 与弧长 s，返回空间线上的点
+function pointOnSpaceLine(i, s, t){
+  // 参数读取
+  const r0=+r0El.value, c=+cEl.value, z=+zetaEl.value; const h0=c*z; const rw0=Math.sqrt(Math.max(0,c*c-h0*h0));
+  const omega0=r0>1e-6? rw0/r0 : 0; const ds=2.0;
+  // 初始放射方向
+  let th = i * 2*Math.PI / (+linesEl.value);
+  let nx=Math.cos(th), ny=Math.sin(th); let ex=-ny, ey=nx; let rx=0, ry=0; let phase=th; // 原点出发
+  for(let u=0; u<s; u+=ds){
+    // 方向受物体影响
+    const n2=bendedDir(rx,ry,nx,ny); nx=n2.nx; ny=n2.ny; ex=-ny; ey=nx;
+    // 半径/角速度（此处不含 W 缩放，保持与 UI 的 r0-约束一致；若需要按 W 调整，可再加一层）
+    const omega_local = omega0; const k_loc = (c>1e-6)? (omega_local/c) : 0; phase += k_loc * ds;
+    rx += nx*ds; ry += ny*ds;
+  }
+  const ramp = 1 - Math.exp(-s/40);
+  const lat = r0 * ramp * Math.cos(phase - omega0 * t); // t 目前仅占位，保持静态轨迹
+  return { x: rx + ex*lat, y: ry + ey*lat };
+}
+
+// ===== 光子（严格沿空间线；仅频率可调） =====
+let photons=[]; let emitAcc=0; let lastT=performance.now();
+function emitOne(){ photons.push({ line: Math.floor(Math.random()*+linesEl.value), s:0 }); }
+emitOneBtn.addEventListener('click', ()=>emitOne());
+clearPhotonsBtn.addEventListener('click', ()=>{ photons.length=0; });
+
+// ===== 绘制 =====
+function drawBodies(){
+  for(const b of bodies){ const s=worldToScreen(b.x,b.y); ctx.beginPath(); ctx.arc(s.x,s.y,b.r,0,Math.PI*2); ctx.fillStyle='#ff4d4d'; ctx.fill(); }
+}
+
+function drawSpaceLines(t){
+  const N=+linesEl.value; const L = 0.9 * Math.hypot(cv.width, cv.height) / zoomVal();
+; const ds=2.0; ctx.save(); ctx.lineWidth=1; ctx.strokeStyle='rgba(0,255,220,0.75)';
+  for(let i=0;i<N;i++){
+    let th = i * 2*Math.PI/N; let nx=Math.cos(th), ny=Math.sin(th); let ex=-ny, ey=nx; let rx=0, ry=0; let phase=th;
+    ctx.beginPath(); let first=true;
+    for(let s=0;s<=L;s+=ds){
+      const n2=bendedDir(rx,ry,nx,ny); nx=n2.nx; ny=n2.ny; ex=-ny; ey=nx;
+      // 与 pointOnSpaceLine 保持同一演化律
+      const r0=+r0El.value, c=+cEl.value, z=+zetaEl.value; const h0=c*z; const rw0=Math.sqrt(Math.max(0,c*c-h0*h0)); const omega0=r0>1e-6?rw0/r0:0;
+      const k_loc=(c>1e-6)?(omega0/c):0; phase += k_loc*ds; rx += nx*ds; ry += ny*ds;
+      const ramp=1-Math.exp(-s/40); const lat=r0*ramp*Math.cos(phase - omega0 * t);
+      const px=rx+ex*lat, py=ry+ey*lat; const sc=worldToScreen(px,py);
+      if(first){ ctx.moveTo(sc.x,sc.y); first=false; } else { ctx.lineTo(sc.x,sc.y); }
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawPhotons(t, dt){
+  // 依频率发射
+  emitAcc += (+emitRateEl.value) * dt; while(emitAcc>=1){ emitOne(); emitAcc -= 1; }
+  // 推进并渲染
+  const ds=2.0; const L=520; ctx.save(); ctx.fillStyle='rgba(255,209,102,0.95)';
+  const next=[];
+  for(const p of photons){ p.s += ds; if(p.s>L) continue; const P=pointOnSpaceLine(p.line, p.s, t); const s=worldToScreen(P.x,P.y); ctx.beginPath(); ctx.arc(s.x,s.y,2,0,Math.PI*2); ctx.fill(); next.push(p); }
+  photons = next; ctx.restore();
+}
+
+function animate(){
+  const now=performance.now(); const dt=Math.max(0,(now-lastT))/1000; lastT=now; const tSec=now*0.001;
+  ctx.clearRect(0,0,cv.width,cv.height);
+  drawSpaceLines(tSec);
+  drawPhotons(tSec, dt);
+  drawBodies();
+  // 原点标记（观察者）
+  const o=worldToScreen(0,0); ctx.fillStyle='#8cf'; ctx.beginPath(); ctx.arc(o.x,o.y,3,0,Math.PI*2); ctx.fill();
+  requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
